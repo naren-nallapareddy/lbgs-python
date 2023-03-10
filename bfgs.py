@@ -1,9 +1,12 @@
 import numpy as np
 from typing import Callable, TypeVar, Generic
 from utils import Funcd, linesearch
-T = TypeVar('T', bound=Callable)
 
-def bfgs(current_point: np.ndarray, gtol: float, iter: int,fret: float, func: Callable):
+
+
+def bfgs(
+    current_point: np.ndarray, gtol: float, iter: int, fret: float, func: Callable,
+):
     """
     BFGS algorithm taken from page 521, numerical recipes: the art of scientific computing
 
@@ -15,10 +18,10 @@ def bfgs(current_point: np.ndarray, gtol: float, iter: int,fret: float, func: Ca
     """
     # Define constants
 
-    ITMAX: int = 2000 # maximum allowed number of iteratios
-    EPS: float = np.finfo(float).eps # type: ignore
-    TOLX: float = 4 * EPS # convergence criterion on x
-    STEP_MAX: float = 100.0 # scaled max step length allowed in line searches
+    ITMAX: int = 2000  # maximum allowed number of iteratios
+    EPS: float = np.finfo(float).eps  # type: ignore
+    TOLX: float = 4 * EPS  # convergence criterion on x
+    STEP_MAX: float = 100.0  # scaled max step length allowed in line searches
 
     n: int = len(current_point)
 
@@ -26,67 +29,76 @@ def bfgs(current_point: np.ndarray, gtol: float, iter: int,fret: float, func: Ca
     hdg = np.zeros((n,))
     pnew = np.zeros((n,))
 
-    hessian = np.identity(n)
-    
-    funcd: Funcd[T] = Funcd(func, EPS)
-    fp = funcd(current_point) # caclulate initial gradient and value
-    g = funcd.gd
+    hessian = np.identity(n)  # Initialize hessian to a identity matrix
+
+    funcd: Funcd = Funcd(func, EPS)
+    f_current_point = funcd(current_point)  # caclulate initial gradient and value
+    grad = funcd.df(current_point)
     sum = np.sum(current_point**2)
-    xi = -g # initial line direction
+    x_initial = -grad  # initial line direction
 
-    stpmax = STPMX * np.maximum(np.sqrt(sum), float(n)) # initial step length
+    step_max = STEP_MAX * np.maximum(np.sqrt(sum), float(n))  # initial step length
 
-    for its in range(0, ITMAX):
-        alam, x, fp_new, check = linesearch(current_point, fp, g, xi, pnew, fret, stpmax, check, funcd) # type: ignore
-        fp = fp_new
-        for ix in range(0, n):
-            xi = pnew[ix] - current_point[ix]
-            current_point[ix] = pnew[ix]
+    for iteration in range(0, ITMAX):
+        _, _, fp_new, check = linesearch(current_point, f_current_point, grad, x_initial, step_max, check, func)  # type: ignore
+        f_current_point = fp_new
+        x_initial = pnew - current_point
+
+        # for ix in range(0, n):
+            # x_initial[ix] = pnew[ix] - current_point[ix]
+            # current_point[ix] = pnew[ix]
         test = 0.0
         for ix in range(0, n):
-            temp = abs(xi[ix])/np.maximum(abs(current_point[ix]), 1.0)
+            temp = abs(x_initial[ix]) / np.maximum(abs(current_point[ix]), 1.0)
             if temp > test:
                 test = temp
         if test < TOLX:
-            return current_point, its, fret
-        dg = g
-        g, fret = funcd(current_point)
+            return current_point, iteration, fret
+        dg = grad
+        grad, fret = funcd(current_point)
         test = 0.0
         den = np.maximum(fret, 1.0)
         for ix in range(0, n):
-            temp = np.abs(g[ix]) * np.maximum(abs(current_point[ix]), 1.0)/den
+            temp = np.abs(grad[ix]) * np.maximum(abs(current_point[ix]), 1.0) / den
             if temp > test:
                 test = temp
         if test < gtol:
-            return current_point, its, fret
-        
+            return current_point, iteration, fret
+
         for ix in range(0, n):
-            dg[ix] = g[ix] - dg[ix]
-        
+            dg[ix] = grad[ix] - dg[ix]
+
         for ix in range(0, n):
             hdg[ix] = 0.0
             for jx in range(0, n):
                 hdg[ix] += hessian[ix, jx] * dg[jx]
 
-
         fac = fae = sumdg = sumxi = 0.0
-        fac = np.sum(dg * xi)
+        fac = np.sum(dg * x_initial)
         fae = np.sum(dg * hdg)
         sumdg = np.sum(dg * dg)
-        sumxi = np.sum(xi * xi)
+        sumxi = np.sum(x_initial * x_initial)
 
         if fac > np.sqrt(EPS * sumdg * sumxi):
-            fac = 1.0/fac
-            fad = 1.0/fae
+            fac = 1.0 / fac
+            fad = 1.0 / fae
             for ix in range(0, n):
-                dg[ix] = fac * xi[ix] - fad * hdg[ix]
+                dg[ix] = fac * x_initial[ix] - fad * hdg[ix]
             for ix in range(0, n):
                 for jx in range(ix, n):
-                    hessian[ix, jx] += fac * xi[ix] * xi[jx] - fad * hdg[ix] * hdg[jx] + fae * dg[ix] * dg[jx]
+                    hessian[ix, jx] += (
+                        fac * x_initial[ix] * x_initial[jx]
+                        - fad * hdg[ix] * hdg[jx]
+                        + fae * dg[ix] * dg[jx]
+                    )
                     hessian[jx, ix] = hessian[ix, jx]
-        
+
         for ix in range(0, n):
-            xi[ix] = 0.0
+            x_initial[ix] = 0.0
             for jx in range(0, n):
-                xi[ix] -= hessian[ix, jx] * g[jx]
-        
+                x_initial[ix] -= hessian[ix, jx] * grad[jx]
+
+
+
+
+
