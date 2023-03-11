@@ -5,7 +5,7 @@ from utils import Funcd, linesearch
 
 
 def bfgs(
-    current_point: np.ndarray, gtol: float, iter: int, fret: float, func: Callable,
+    current_point: np.ndarray, gtol: float, iter: int, f_return: float, func: Callable,
 ):
     """
     BFGS algorithm taken from page 521, numerical recipes: the art of scientific computing
@@ -25,9 +25,9 @@ def bfgs(
 
     n: int = len(current_point)
 
-    dg = np.zeros((n,))
+    d_grad = np.zeros((n,))
     hdg = np.zeros((n,))
-    pnew = np.zeros((n,))
+    p_new = np.zeros((n,))
 
     hessian = np.identity(n)  # Initialize hessian to a identity matrix
 
@@ -40,61 +40,52 @@ def bfgs(
     step_max = STEP_MAX * np.maximum(np.sqrt(sum), float(n))  # initial step length
 
     for iteration in range(0, ITMAX):
-        _, _, fp_new, check = linesearch(current_point, f_current_point, grad, x_initial, step_max, check, func)  # type: ignore
+        _, p_new, fp_new, check = linesearch(current_point, f_current_point, grad, x_initial, step_max, check, func)  # type: ignore
         f_current_point = fp_new
-        x_initial = pnew - current_point
-
-        # for ix in range(0, n):
-            # x_initial[ix] = pnew[ix] - current_point[ix]
-            # current_point[ix] = pnew[ix]
-        test = 0.0
+        x_initial = p_new - current_point
+        test_for_convergence = 0.0 
         for ix in range(0, n):
             temp = abs(x_initial[ix]) / np.maximum(abs(current_point[ix]), 1.0)
-            if temp > test:
-                test = temp
-        if test < TOLX:
-            return current_point, iteration, fret
-        dg = grad
-        grad, fret = funcd(current_point)
-        test = 0.0
-        den = np.maximum(fret, 1.0)
+            if temp > test_for_convergence:
+                test_for_convergence = temp
+        if test_for_convergence < TOLX:
+            return current_point, iteration, f_return
+        d_grad = grad
+        grad, f_return = funcd(current_point)
+        test_for_convergence = 0.0
+        den = np.maximum(f_return, 1.0)
         for ix in range(0, n):
             temp = np.abs(grad[ix]) * np.maximum(abs(current_point[ix]), 1.0) / den
-            if temp > test:
-                test = temp
-        if test < gtol:
-            return current_point, iteration, fret
+            if temp > test_for_convergence:
+                test_for_convergence = temp
+        if test_for_convergence < gtol:
+            return current_point, iteration, f_return
+
+        d_grad = grad-d_grad
 
         for ix in range(0, n):
-            dg[ix] = grad[ix] - dg[ix]
-
-        for ix in range(0, n):
-            hdg[ix] = 0.0
             for jx in range(0, n):
-                hdg[ix] += hessian[ix, jx] * dg[jx]
+                hdg[ix] += hessian[ix, jx] * d_grad[jx]
 
-        fac = fae = sumdg = sumxi = 0.0
-        fac = np.sum(dg * x_initial)
-        fae = np.sum(dg * hdg)
-        sumdg = np.sum(dg * dg)
-        sumxi = np.sum(x_initial * x_initial)
+        fac = np.dot(d_grad, x_initial) 
+        fae = np.dot(d_grad, hdg)
+        sum_dgrad = np.sum(d_grad ** 2)
+        sum_x_initial = np.sum(x_initial ** 2)
 
-        if fac > np.sqrt(EPS * sumdg * sumxi):
+        if fac > np.sqrt(EPS * sum_dgrad * sum_x_initial):
             fac = 1.0 / fac
             fad = 1.0 / fae
-            for ix in range(0, n):
-                dg[ix] = fac * x_initial[ix] - fad * hdg[ix]
+            d_grad = fac * x_initial - fad * hdg
             for ix in range(0, n):
                 for jx in range(ix, n):
                     hessian[ix, jx] += (
-                        fac * x_initial[ix] * x_initial[jx]
-                        - fad * hdg[ix] * hdg[jx]
-                        + fae * dg[ix] * dg[jx]
+                        fac * x_initial[ix] **2
+                        - fad * hdg[ix] ** 2 
+                        + fae * d_grad[ix] ** 2
                     )
                     hessian[jx, ix] = hessian[ix, jx]
 
         for ix in range(0, n):
-            x_initial[ix] = 0.0
             for jx in range(0, n):
                 x_initial[ix] -= hessian[ix, jx] * grad[jx]
 
