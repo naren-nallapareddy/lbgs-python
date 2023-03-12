@@ -1,7 +1,7 @@
 # LBFGS utilities for optimization from Numerical recipes: the art of scientific computing
 # Author: Naren Nallapareddy
 import numpy as np
-from typing import TypeVar, Generic, Callable
+from typing import TypeVar, Generic, Callable, Any
 import math
 
 
@@ -11,7 +11,7 @@ def linesearch(
     grad: np.ndarray,
     search_direction: np.ndarray,
     step_max: float,
-    func: Callable,
+    func,
 ):
     """
     Line search method taken from page 479, numerical recipes: the art of scientific computing
@@ -33,10 +33,10 @@ def linesearch(
     check: output check is false on normal exit, and it is true when x is too close to xold
     """
     ALF = 1e-4
-    TOLX = np.finfo(
-        float
-    ).eps  # ALF ensures sufficient decrease in function value, TOLX is the convergence criterion on \nabla x
-
+    # TOLX = np.finfo(
+    # float
+    # ).eps  # ALF ensures sufficient decrease in function value, TOLX is the convergence criterion on \nabla x
+    TOLX = 1e-4
     a_lambda_2 = 0.0
     f2 = 0.0
     slope = 0.0
@@ -44,7 +44,9 @@ def linesearch(
 
     n = len(x_old)  # Length of the old input vector
 
-    sum = np.sqrt(np.sum(search_direction**2))  # sum = sum over search direction
+    sum = np.sqrt(
+        np.sum(search_direction**2)
+    )  # sum = sum over search direction
 
     if sum > step_max:
         search_direction = (
@@ -56,14 +58,17 @@ def linesearch(
     )  # slope = dot product of gradient and search direction
     assert slope < 0, "Roundoff problem in linesearch."
 
-    test = 0.0  # compute lambda min
-    for ix in range(0, n):
-        temp = np.abs(search_direction[ix]) / np.maximum(np.abs(x_old[ix]), 1.0)
-        if temp > test:
-            test = temp
-
+    test = np.max(np.abs(search_direction) / np.maximum(np.abs(x_old), 1.0))
+    ##! Literal translation of the for loop below
+    # test = 0.0  # computing lambda min
+    # for ix in range(0, n):
+    # temp = np.abs(search_direction[ix]) / np.maximum(
+    # np.abs(x_old[ix]), 1.0
+    # )
+    # if temp > test:
+    # test = temp
+    ##!
     a_lambda_min = TOLX / test  # type: ignore
-
     a_lambda = 1.0  # try full Newton step first
     while True:
         x = x_old + a_lambda * search_direction
@@ -100,12 +105,11 @@ def linesearch(
                         temp_lambda = (-b + np.sqrt(discriminant)) / (3.0 * a)
                     else:
                         temp_lambda = -slope / (b + np.sqrt(discriminant))
-                if temp_lambda > 0.5 * a_lambda:
-                    temp_lambda = 0.5 * a_lambda
+                temp_lambda = np.minimum(temp_lambda, 0.5 * a_lambda)
         a_lambda_2 = a_lambda
         f2 = f
         a_lambda = np.maximum(
-            temp_lambda, 0.1 * a_lambda
+            temp_lambda, 0.01 * a_lambda
         )  # lambda is at least 10% of the old lambda
 
 
@@ -117,9 +121,9 @@ class Funcd(Generic[T]):
     Class for function evaluation and gradient evaluation using finite difference.
     """
 
-    def __init__(self, func: Callable, EPS):
+    def __init__(self, func: Callable):
         self.func = func
-        self.EPS = EPS
+        self.EPS = np.sqrt(np.finfo(float).eps)
         self.f = None
 
     def __call__(self, x: np.ndarray):
