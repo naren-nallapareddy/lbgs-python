@@ -118,18 +118,29 @@ class Funcd:
 
     def __init__(self, func: Callable):
         self.func = func
-        self.EPS = np.cbrt(np.finfo(float).eps)
+        self.EPS = np.sqrt(np.finfo(float).eps)
+
+    # def __call__(self, x: np.ndarray):
+    #     """Central difference gradient calculator"""
+    #     n = len(x)
+    #     grad = np.zeros_like(x)
+    #     for ix in range(0, n):
+    #         x_forward = np.copy(x)
+    #         x_backward = np.copy(x)
+    #         x_forward[ix] += self.EPS
+    #         x_backward[ix] -= self.EPS
+    #         f_forward = self.func(x_forward)
+    #         f_backward = self.func(x_backward)
+    #         grad[ix] = (f_forward - f_backward) / (2 * self.EPS)
+    #     return grad
 
     def __call__(self, x: np.ndarray):
-        """Central difference gradient calculator"""
         n = len(x)
         grad = np.zeros_like(x)
+        f = self.func(x)
         for ix in range(0, n):
-            x_forward = np.copy(x)
-            x_backward = np.copy(x)
-            x_forward[ix] += self.EPS
-            x_backward[ix] -= self.EPS
-            f_forward = self.func(x_forward)
-            f_backward = self.func(x_backward)
-            grad[ix] = (f_forward - f_backward) / (2 * self.EPS)
+            x_forward_ = np.copy(x)
+            x_forward_[ix] = x_forward_[ix] + self.EPS
+            f_forward = self.func(x_forward_)
+            grad[ix] = (f_forward - f) / self.EPS
         return grad

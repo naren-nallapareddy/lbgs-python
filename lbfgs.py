@@ -25,13 +25,13 @@ def inv_hessian(
     # using the same formula names as in Nocedal and Wright for ease of reference
     alphas = []
     for s, rho, y in zip(sk_memo[::-1], rho_memo[::-1], yk_memo):
-        alpha = rho * np.dot(s, q)
-        q = q - alpha * y
-        alphas.append(alpha)  # keeping track of alpha
+        alphas.append(rho * np.dot(s, q))
+        q = q - alphas[-1] * y
 
-    r = np.dot(sk_memo[-1], yk_memo[-1]) / np.dot(yk_memo[-1], yk_memo[-1]) * q
+    # r = np.dot(sk_memo[-1], yk_memo[-1]) / np.dot(yk_memo[-1], yk_memo[-1]) * q
+    r = q
 
-    for y, s, alpha in zip(yk_memo, sk_memo, alphas[::-1]):
+    for y, s, alpha, rho in zip(yk_memo, sk_memo, alphas[::-1], rho_memo):
         beta = rho * np.dot(y, r)
         r = r + s * (alpha - beta)
 
@@ -45,6 +45,9 @@ def lbfgs(func, x_0, g_tol, max_iters, max_corr=None):
     if x_0.ndim == 2:
         x_0 = x_0.squeeze()
         x_0 = x_0.reshape((-1,))
+    if not isinstance(x_0, float):
+        x_0 = x_0.astype(float)
+
     if max_iters > MAXITER:
         max_iters = MAXITER
     if max_corr is None:
@@ -68,6 +71,13 @@ def lbfgs(func, x_0, g_tol, max_iters, max_corr=None):
     number_params = len(x_0)
     EYE = np.eye(number_params, dtype=int)
 
+    # initializing momentum term
+    grad_1 = np.zeros(number_params)
+    beta_1 = 0.1
+
+    # Momentum term first iteration
+    grad_1 += grad_k
+
     fval_k_m_1 = (
         fval_k + np.linalg.norm(grad_k) / 2
     )  # This is a trick based on the idea that initial step guess to dx ~ 1.
@@ -76,7 +86,7 @@ def lbfgs(func, x_0, g_tol, max_iters, max_corr=None):
 
     def initial_inv_hessian():
         x_k_m_1 = x_k - np.cbrt(EPS)
-        _, grad_k_m_1 = funcd(x_k_m_1)
+        grad_k_m_1 = funcd(x_k_m_1)
         s_k_m_1 = x_k - x_k_m_1
         y_k_m_1 = grad_k - grad_k_m_1
         gamma_k = np.dot(y_k_m_1, s_k_m_1) / np.dot(y_k_m_1, y_k_m_1)
@@ -86,16 +96,24 @@ def lbfgs(func, x_0, g_tol, max_iters, max_corr=None):
     # Given in nocedal and wright, implementaion details of BFGS
     inv_hessian_k = initial_inv_hessian()
 
-    sigma_3 = 0.01
-
     g_norm = np.amax(np.abs(grad_k))  # inf norm of gradient
     # initializations
     k = 0
-    p_k = -grad_k  # the initial search direction is just negative gradient
+    p_k = -np.dot(
+        inv_hessian_k, grad_k
+    )  # In this case it is equivalent to np.matmul or @
+
+    # the initial search direction is just negative gradient
     while g_norm > g_tol and k < max_iters:
-        deltak = np.dot(grad_k, grad_k)
         try:
-            alpha_k, _, _, fval_k, fval_k_m_1, grad_k_p_1 = spo.line_search(
+            (
+                alpha_k,
+                _,
+                _,
+                fval_k,
+                fval_k_m_1,
+                grad_k_p_1,
+            ) = spo.line_search(
                 func,
                 funcd,
                 x_k,
@@ -107,11 +125,21 @@ def lbfgs(func, x_0, g_tol, max_iters, max_corr=None):
         except __import__("scipy")._LineSearchError:
             Warning("Line search failed")
             break
+
+        if alpha_k is None:
+            if fval_k is None:
+                fval_k = fval_k_m_1
+            optimization_dict = {
+                "fval": fval_k,
+                "x": x_k,
+                "nit": k,
+                "gnorm": g_norm,
+            }
+            return optimization_dict
         # Calculating s_k and y_k
         s_k = alpha_k * p_k  # This is also equal to x_k_p_1 - x_k
         x_k_p_1 = x_k + s_k
 
-        grad_k_p_1 = funcd(x_k)
         y_k = grad_k_p_1 - grad_k
 
         # Precalculating rho_k
@@ -138,8 +166,25 @@ def lbfgs(func, x_0, g_tol, max_iters, max_corr=None):
 
         g_norm = np.amax(np.abs(grad_k))  # inf norm of gradient
 
+        W_k_left = (
+            np.identity(number_params) - rho_k * s_k[:, None] * y_k[None, :]
+        )  # W is the weight matrix which is the average of the inverse hessian matrix
+        W_k_right = (
+            np.identity(number_params) - rho_k * y_k[:, None] * s_k[None, :]
+        )
+        sum_term = rho_k * s_k[:, None] * s_k[None, :]
+        inv_hessian_k = (
+            np.dot(W_k_left, np.dot(inv_hessian_k, W_k_right)) + sum_term
+        )
+
+        grad_1 *= beta_1
+
+        p_k = -np.dot(inv_hessian_k, grad_k + grad_1)
+        grad_1 += grad_k
         # Calculating the new search direction
-        p_k = -inv_hessian(s_memo, y_memo, rho_memo, grad_k, max_corr=max_corr)
+        # p_k_test = -inv_hessian(
+        #     s_memo, y_memo, rho_memo, grad_k, max_corr=max_corr
+        # )
 
     optimization_dict = {"fval": fval_k, "x": x_k, "nit": k, "gnorm": g_norm}
     return optimization_dict

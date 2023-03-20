@@ -17,7 +17,7 @@ if __name__ == "__main__":
     # plt.colorbar()
     # plt.show()
 
-    x0 = np.array([3, -3, 3])
+    x0 = np.array([3, 3, 3, 3, 3])
     res = minimize(
         rosen,
         x0,
@@ -25,11 +25,7 @@ if __name__ == "__main__":
         jac=False,
         options={"disp": False},
     )
-    curr_point, fvalue, itr = lbfgs(rosen, x0, 1e-5, 100)
-    res_bfgs = {
-        "x": np.round(curr_point),
-        "itr": itr,
-        "fun": np.round(fvalue),
-    }
+    res_lbfgs = lbfgs(rosen, x0, 1e-5, 100)
+
     pprint(res)
-    pprint(res_bfgs)
+    pprint(res_lbfgs)
