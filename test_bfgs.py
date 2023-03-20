@@ -1,15 +1,35 @@
 import numpy as np
 from utils import linesearch
-from bfgs import bfgs
+from lbfgs import lbfgs
 from scipy.optimize import rosen, minimize
 from rich.pretty import pprint
+import matplotlib.pyplot as plt
+
+# def simple_convex_function_2d(x):
+# return x[0] ** 2 + x[1] ** 2
 
 if __name__ == "__main__":
-    x0 = np.array([1.2, 0.7, 0.8, 1.9, 1.2])
+    # x = np.linspace(-2, 2, 100)
+    # y = np.linspace(-2, 2, 100)
+    # X, Y = np.meshgrid(x, y)
+    # Z = simple_convex_function_2d([X, Y])
+    # plt.contourf(X, Y, Z, 100)
+    # plt.colorbar()
+    # plt.show()
+
+    x0 = np.array([3, -3, 3])
     res = minimize(
-        rosen, x0, method="BFGS", jac=False, options={"disp": False}
+        rosen,
+        x0,
+        method="BFGS",
+        jac=False,
+        options={"disp": False},
     )
-    curr_point, itr, fvalue = bfgs(x0, 1e-5, 100, rosen)
-    res_bfgs = {"x": curr_point, "nfev": itr, "fun": fvalue}
+    curr_point, fvalue, itr = lbfgs(rosen, x0, 1e-5, 100)
+    res_bfgs = {
+        "x": np.round(curr_point),
+        "itr": itr,
+        "fun": np.round(fvalue),
+    }
     pprint(res)
     pprint(res_bfgs)

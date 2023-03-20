@@ -1,13 +1,14 @@
 import numpy as np
-from typing import Callable, TypeVar, Generic
-from utils import Funcd, linesearch
+from typing import Callable
+from utils import Funcd
+import scipy.optimize as spo
 
 
 def bfgs(
-    current_point: np.ndarray,
+    func: Callable,
+    x_0: np.ndarray,
     gtol: float,
     max_iters: int,
-    func: Callable,
 ):
     """
     BFGS algorithm taken from page 521, numerical recipes: the art of scientific computing
@@ -22,96 +23,70 @@ def bfgs(
 
     ITMAX: int = 20000  # maximum allowed number of iteratios
     EPS: float = np.finfo(float).eps  # type: ignore
-    TOLX: float = 4 * EPS  # convergence criterion on x
-    STEP_MAX: float = 100.0  # scaled max step length allowed in line searches
 
     assert max_iters <= ITMAX, "Too many iterations in BFGS"
 
-    n: int = len(current_point)
+    x_k = np.copy(x_0)  # Initial point is point at x_k
+    n: int = len(x_k)
 
-    d_grad = np.zeros((n,))
-    hessian_d_grad = np.zeros((n,))
-    search_direction_new = np.zeros((n,))
+    if x_k.dtype != np.float64:
+        x_k = x_k.astype(np.float64)
 
-    hessian = np.identity(n)  # Initialize hessian to a identity matrix
+    y_k = np.zeros(
+        (n,), dtype=float
+    )  # y_k is the vector of grad difference \nabla f(x_k_1) - \nabla f(x_k)
+    s_k = np.zeros(
+        (n,), dtype=float
+    )  # s_k is the vector of point difference x_k_1 - x_k, notation taken from wright and nocedal book
+    gamma_k = np.dot(s_k, y_k) / np.dot(y_k, y_k)
+    hessian_k = gamma_k * np.identity(
+        n, dtype=float
+    )  # Initialize hessian to a identity matrix
 
-    funcd: Funcd = Funcd(func)
-    f_current_point = funcd(
-        current_point
-    )  # caclulate initial gradient and value
-    f_return = f_current_point
-    grad = funcd.df(current_point)
-    sum = np.sum(current_point**2)
-    x_initial = -grad  # initial line direction
+    func_derivative = Funcd(func)
+    f_k = func(x_k)  # caclulate initial gradient and value
+    g_k = func_derivative(x_k)
+    g_k_plus_1 = g_k
+    f_k_plus_1 = f_k
+    f_k_minus_1 = f_k + np.linalg.norm(g_k) / 2.0
 
-    step_max = STEP_MAX * np.maximum(
-        np.sqrt(sum), float(n)
-    )  # initial step length
-
-    for iteration in range(0, max_iters):
-        _, search_direction_new, fp_new, _ = linesearch(current_point, f_current_point, grad, x_initial, step_max, funcd)  # type: ignore
-        f_current_point = fp_new
-        x_initial = search_direction_new - current_point
-        test_for_convergence = np.max(
-            np.abs(x_initial) / np.maximum(np.abs(current_point), 1.0)
+    for itr in range(0, max_iters):
+        if np.linalg.norm(g_k) < gtol:
+            return x_k, f_k_minus_1, itr + 1
+        p_k = -np.dot(
+            hessian_k, g_k
+        )  # Search direction as defined in wright and nocedal book
+        alpha_k, _, _, f_k, f_k_minus_1, new_slope = spo.line_search(
+            func,
+            func_derivative,
+            x_k,
+            p_k,
+            g_k,
+            old_fval=f_k,
+            old_old_fval=f_k_minus_1,
         )
-        ##! Literal translation of the for loop below
-        # for ix in range(0, n):
-        # temp = abs(x_initial[ix]) / np.maximum(abs(current_point[ix]), 1.0)
-        # if temp > test_for_convergence:
-        # test_for_convergence = temp
-        ##!
-        if test_for_convergence < TOLX:
-            return current_point, iteration, f_return
-        d_grad = grad
-        grad = funcd.df(search_direction_new)
-        test_for_convergence = 0.0
-        den = np.maximum(f_return, 1.0)  # type: ignore
-        test_for_convergence = np.max(
-            (np.abs(grad) * np.maximum(np.abs(search_direction_new), 1.0))
-            / den
-        )  # type: ignore
-        ##! Literal translation of the for loop below
-        # for ix in range(0, n):
-        # temp = (
-        # np.abs(grad[ix])
-        # * np.maximum(abs(current_point[ix]), 1.0)
-        # / den
-        # )
-        # if temp > test_for_convergence:
-        # test_for_convergence = temp
-        ##!
-        if test_for_convergence < gtol:
-            return current_point, iteration, f_return
+        s_k = alpha_k * p_k  # Line search step
+        x_k_plus_1 = x_k + s_k  # Line search step
 
-        d_grad = grad - d_grad
+        g_k_plus_1 = func_derivative(x_k_plus_1)
+        y_k = g_k_plus_1 - g_k
+        if alpha_k * np.linalg.norm(p_k) <= 0:
+            break
+        if not np.isfinite(f_k_minus_1):
+            break
 
-        hessian_d_grad = np.squeeze(d_grad[None] @ hessian)
-        ##! Literal translation of the for loop below
-        # for ix in range(0, n):
-        # for jx in range(0, n):
-        # hessian_d_grad[ix] += hessian[ix, jx] * d_grad[jx]
-        ##!
-        fac = np.dot(d_grad, x_initial)
-        fae = np.dot(d_grad, hessian_d_grad)
-        sum_dgrad = np.sum(d_grad**2)
-        sum_x_initial = np.sum(x_initial**2)
+        # Update step for Hessian
+        rho_k = 1.0 / np.dot(
+            y_k, s_k
+        )  # Again using notation from wright and nocedal book
+        W_k_left = (
+            np.identity(n) - rho_k * s_k[:, None] * y_k[None, :]
+        )  # W is the weight matrix which is the average of the inverse hessian matrix
+        W_k_right = np.identity(n) - rho_k * y_k[:, None] * s_k[None, :]
+        sum_term = rho_k * s_k[:, None] * s_k[None, :]
+        hessian_k = np.dot(W_k_left, np.dot(hessian_k, W_k_right)) + sum_term
 
-        if fac > np.sqrt(EPS * sum_dgrad * sum_x_initial):
-            fac = 1.0 / fac
-            fad = 1.0 / fae
-            d_grad = fac * x_initial - fad * hessian_d_grad
-            for ix in range(0, n):
-                for jx in range(ix, n):
-                    hessian[ix, jx] += (
-                        fac * x_initial[ix] ** 2
-                        - fad * hessian_d_grad[ix] ** 2
-                        + fae * d_grad[ix] ** 2
-                    )
-                    hessian[jx, ix] = hessian[ix, jx]
+        g_k = g_k_plus_1
+        x_k = x_k_plus_1
 
-        for ix in range(0, n):
-            for jx in range(0, n):
-                x_initial[ix] -= (
-                    hessian[ix, jx] * grad[jx]
-                )  # Next calculate the new search direction
+    return x_k, f_k, itr + 1

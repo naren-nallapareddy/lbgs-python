@@ -1,8 +1,7 @@
 # LBFGS utilities for optimization from Numerical recipes: the art of scientific computing
 # Author: Naren Nallapareddy
 import numpy as np
-from typing import TypeVar, Generic, Callable, Any
-import math
+from typing import Callable
 
 
 def linesearch(
@@ -36,10 +35,9 @@ def linesearch(
     # TOLX = np.finfo(
     # float
     # ).eps  # ALF ensures sufficient decrease in function value, TOLX is the convergence criterion on \nabla x
-    TOLX = 1e-4
+    TOLX = np.finfo(float).eps
     a_lambda_2 = 0.0
     f2 = 0.0
-    slope = 0.0
     check = False
 
     n = len(x_old)  # Length of the old input vector
@@ -92,8 +90,8 @@ def linesearch(
                     a_lambda - a_lambda_2
                 )
                 b = (
-                    -a_lambda_2 * rhs1 / (a_lambda**2)
-                    + a_lambda * rhs2 / (a_lambda_2**2)
+                    -(a_lambda_2 * rhs1) / (a_lambda**2)
+                    + (a_lambda * rhs2) / (a_lambda_2**2)
                 ) / (a_lambda - a_lambda_2)
                 if a == 0.0:
                     temp_lambda = -slope / (2.0 * b)
@@ -113,38 +111,25 @@ def linesearch(
         )  # lambda is at least 10% of the old lambda
 
 
-T = TypeVar("T", bound=Callable)
-
-
-class Funcd(Generic[T]):
+class Funcd:
     """
     Class for function evaluation and gradient evaluation using finite difference.
     """
 
     def __init__(self, func: Callable):
         self.func = func
-        self.EPS = np.sqrt(np.finfo(float).eps)
-        self.f = None
+        self.EPS = np.cbrt(np.finfo(float).eps)
 
     def __call__(self, x: np.ndarray):
-        self.f = self.func(x)
-        return self.f
-
-    def df(self, x: np.ndarray):
+        """Central difference gradient calculator"""
         n = len(x)
-        xh = np.copy(x)
-        fold = self.f
-        df = np.zeros_like(x)
+        grad = np.zeros_like(x)
         for ix in range(0, n):
-            temp = x[ix]
-            h = self.EPS * math.fabs(
-                temp
-            )  # temp is a float, no need to introduce numpy
-            if h == 0.0:
-                h = self.EPS
-            xh[ix] = temp + h
-            h = xh[ix] - temp
-            fh = self.__call__(xh)
-            xh[ix] = temp
-            df[ix] = (fh - fold) / h
-        return df
+            x_forward = np.copy(x)
+            x_backward = np.copy(x)
+            x_forward[ix] += self.EPS
+            x_backward[ix] -= self.EPS
+            f_forward = self.func(x_forward)
+            f_backward = self.func(x_backward)
+            grad[ix] = (f_forward - f_backward) / (2 * self.EPS)
+        return grad
