@@ -38,7 +38,7 @@ def inv_hessian(
     return r
 
 
-def lbfgs(func, x_0, gtol, max_iters):
+def lbfgs(func, x_0, g_tol, max_iters, max_corr=None):
     assert isinstance(x_0, np.ndarray), "Input x should be numpy array"
     if x_0.ndim == 0:
         x_0.shape = (1,)  # Converting 0-d array into 1-d array
@@ -47,8 +47,10 @@ def lbfgs(func, x_0, gtol, max_iters):
         x_0 = x_0.reshape((-1,))
     if max_iters > MAXITER:
         max_iters = MAXITER
+    if max_corr is None:
+        max_corr = MAXCORR
 
-    gtol = np.sqrt(EPS)
+    g_tol = np.sqrt(EPS)
 
     # initializing memory
     s_memo = []
@@ -86,11 +88,11 @@ def lbfgs(func, x_0, gtol, max_iters):
 
     sigma_3 = 0.01
 
-    gnorm = np.amax(np.abs(grad_k))  # inf norm of gradient
+    g_norm = np.amax(np.abs(grad_k))  # inf norm of gradient
     # initializations
     k = 0
     p_k = -grad_k  # the initial search direction is just negative gradient
-    while gnorm > gtol and k < max_iters:
+    while g_norm > g_tol and k < max_iters:
         deltak = np.dot(grad_k, grad_k)
         try:
             alpha_k, _, _, fval_k, fval_k_m_1, grad_k_p_1 = spo.line_search(
@@ -124,7 +126,7 @@ def lbfgs(func, x_0, gtol, max_iters):
             len(s_memo) == len(y_memo) == len(rho_memo)
         ), "Memo lengths are not equal"
 
-        if len(s_memo) > MAXCORR:
+        if len(s_memo) > max_corr:
             s_memo.pop(0)
             y_memo.pop(0)
             rho_memo.pop(0)
@@ -135,3 +137,9 @@ def lbfgs(func, x_0, gtol, max_iters):
         grad_k = grad_k_p_1
 
         g_norm = np.amax(np.abs(grad_k))  # inf norm of gradient
+
+        # Calculating the new search direction
+        p_k = -inv_hessian(s_memo, y_memo, rho_memo, grad_k, max_corr=max_corr)
+
+    optimization_dict = {"fval": fval_k, "x": x_k, "nit": k, "gnorm": g_norm}
+    return optimization_dict
